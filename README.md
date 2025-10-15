@@ -27,7 +27,7 @@ pip install fastapi uvicorn requests fastmcp streamlit pandas plotly
 
 **Terminal 1 - Start Backend:**
 ```bash
-python backend_mcp.py
+python backend.py
 ```
 
 **Terminal 2 - Start Frontend:**
@@ -71,7 +71,7 @@ streamlit run frontend.py
 
 ```
 mcp_security_lab/
-├── backend_mcp.py    # FastAPI + MCP servers (vulnerable)
+├── backend.py        # FastAPI + MCP servers (vulnerable)
 ├── frontend.py       # Streamlit web interface
 └── README.md         # This file
 ```
