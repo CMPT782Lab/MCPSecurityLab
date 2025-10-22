@@ -1,6 +1,6 @@
 """
 MCP Attack/Defend Lab - Streamlit Frontend
-Pure discovery-based learning - no hints, no examples
+Complete integrated version with challenges, leaderboards, and learning resources
 
 Requirements: pip install streamlit requests pandas plotly
 Run: streamlit run frontend.py
@@ -13,7 +13,7 @@ from datetime import datetime
 import pandas as pd
 import plotly.express as px
 
-API_URL = "http://localhost:8000"
+API_URL = "http://localhost:8085"
 
 st.set_page_config(
     page_title="MCP Security Lab",
@@ -21,17 +21,25 @@ st.set_page_config(
     layout="wide"
 )
 
-# Session state
+# ============================================================================
+# SESSION STATE INITIALIZATION
+# ============================================================================
+
 if 'student_id' not in st.session_state:
     st.session_state.student_id = None
-if 'phase' not in st.session_state:
-    st.session_state.phase = 'attack'
+if 'page' not in st.session_state:
+    st.session_state.page = 'attack'
 if 'attack_results' not in st.session_state:
     st.session_state.attack_results = []
 if 'defense_submissions' not in st.session_state:
     st.session_state.defense_submissions = []
+if 'hint_level' not in st.session_state:
+    st.session_state.hint_level = {}
 
-# API helpers
+# ============================================================================
+# API HELPERS
+# ============================================================================
+
 def api_get(endpoint):
     try:
         response = requests.get(f"{API_URL}{endpoint}", timeout=10)
@@ -50,6 +58,9 @@ def api_post(endpoint, data):
     except:
         return None
 
+# ============================================================================
+# LOGIN PAGE
+# ============================================================================
 
 def render_login():
     st.title("🔐 MCP Attack/Defend Security Lab")
@@ -78,7 +89,7 @@ def render_login():
                 st.error("Enter student ID")
 
 # ============================================================================
-# MAIN INTERFACE
+# MAIN NAVIGATION
 # ============================================================================
 
 def main():
@@ -99,17 +110,30 @@ def main():
             with col1:
                 st.metric("Attacks", stats.get("successful_attacks", 0))
             with col2:
-                st.metric("Defenses", stats.get("verified_defenses", 0))
+                attacks = stats.get("total_attacks", 1)
+                success = stats.get("successful_attacks", 0)
+                rate = (success / attacks * 100) if attacks > 0 else 0
+                st.metric("Rate", f"{rate:.0f}%")
         
         st.markdown("---")
         
-        # Phase selector
-        phase = st.radio(
-            "Phase",
-            ["🎯 ATTACK", "🛡️ DEFEND"],
+        # Navigation
+        page = st.radio(
+            "Navigation",
+            ["🎯 Free Play", "🏆 Challenges", "📊 Leaderboard", "🛡️ Defense", "📚 Learn"],
             label_visibility="collapsed"
         )
-        st.session_state.phase = 'attack' if '🎯' in phase else 'defend'
+        
+        if "🎯" in page:
+            st.session_state.page = 'attack'
+        elif "🏆" in page:
+            st.session_state.page = 'challenges'
+        elif "📊" in page:
+            st.session_state.page = 'leaderboard'
+        elif "🛡️" in page:
+            st.session_state.page = 'defend'
+        elif "📚" in page:
+            st.session_state.page = 'learn'
         
         st.markdown("---")
         
@@ -117,18 +141,24 @@ def main():
             st.session_state.student_id = None
             st.rerun()
     
-    # Main content
-    if st.session_state.phase == 'attack':
+    # Main content routing
+    if st.session_state.page == 'attack':
         render_attack()
-    else:
+    elif st.session_state.page == 'challenges':
+        render_challenge_mode()
+    elif st.session_state.page == 'leaderboard':
+        render_leaderboard()
+    elif st.session_state.page == 'defend':
         render_defend()
+    elif st.session_state.page == 'learn':
+        render_learning_resources()
 
 # ============================================================================
-# ATTACK PHASE
+# ATTACK PHASE (FREE PLAY)
 # ============================================================================
 
 def render_attack():
-    st.title("🎯 ATTACK PHASE")
+    st.title("🎯 ATTACK PHASE - Free Play")
     st.markdown("Exploit vulnerabilities in MCP servers. Discover attack vectors and achieve exploitation.")
     
     # Load MCP servers
@@ -143,7 +173,6 @@ def render_attack():
     st.subheader("Select MCP Server Target")
     
     cols = st.columns(len(servers))
-    selected_server = None
     
     for idx, server in enumerate(servers):
         with cols[idx]:
@@ -230,10 +259,213 @@ def render_attack():
         st.markdown("---")
         st.subheader("Attack History")
         
-        for idx, attack in enumerate(st.session_state.attack_results[:10]):
+        for attack in st.session_state.attack_results[:10]:
             status = "✅ EXPLOITED" if attack['exploited'] else "❌ Failed"
             with st.expander(f"{attack['timestamp']} - {attack['server']} - {attack['tool']} - {status}"):
                 st.json(attack['result'])
+
+# ============================================================================
+# CHALLENGE MODE
+# ============================================================================
+
+def render_challenge_mode():
+    st.title("🎯 Challenge Mode")
+    st.markdown("Complete structured challenges to learn exploitation techniques")
+    
+    # Get challenges
+    challenges_data = api_get(f"/api/challenges/list/{st.session_state.student_id}")
+    if not challenges_data:
+        st.error("Cannot load challenges")
+        return
+    
+    challenges = challenges_data.get("challenges", [])
+    
+    # Group by difficulty
+    difficulty_levels = {
+        "beginner": {"name": "🟢 Beginner", "color": "green"},
+        "intermediate": {"name": "🟡 Intermediate", "color": "orange"},
+        "advanced": {"name": "🔴 Advanced", "color": "red"},
+        "expert": {"name": "⚫ Expert", "color": "purple"}
+    }
+    
+    # Progress overview
+    completed = sum(1 for c in challenges if c.get('completed'))
+    total = len(challenges)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Challenges Completed", f"{completed}/{total}")
+    with col2:
+        progress_pct = (completed / total * 100) if total > 0 else 0
+        st.metric("Progress", f"{progress_pct:.1f}%")
+    with col3:
+        total_points = sum(c['points'] for c in challenges if c.get('completed'))
+        st.metric("Points Earned", total_points)
+    
+    st.progress(progress_pct / 100)
+    st.markdown("---")
+    
+    # Display challenges by difficulty
+    for level, info in difficulty_levels.items():
+        level_challenges = [c for c in challenges if c.get('difficulty_level') == level]
+        if not level_challenges:
+            continue
+        
+        st.subheader(info['name'])
+        
+        for challenge in level_challenges:
+            status = "✅" if challenge.get('completed') else "⏳"
+            
+            with st.expander(f"{status} {challenge['title']} - {challenge['points']} pts"):
+                st.markdown(f"**Description:** {challenge['description']}")
+                st.markdown(f"**Target Server:** `{challenge['server']}`")
+                st.markdown(f"**Target Tool:** `{challenge['tool']}`")
+                st.markdown(f"**Attempts:** {challenge.get('attempts', 0)}")
+                
+                if challenge.get('completed'):
+                    st.success("✅ Challenge Completed!")
+                    
+                    # Flag submission
+                    st.markdown("---")
+                    st.markdown("**🚩 Found a flag in the output? Submit it for bonus points!**")
+                    flag_input = st.text_input("Enter flag", key=f"flag_{challenge['id']}")
+                    if st.button("Submit Flag", key=f"submit_flag_{challenge['id']}"):
+                        result = api_post("/api/ctf/submit_flag", {
+                            "student_id": st.session_state.student_id,
+                            "challenge_id": challenge['id'],
+                            "flag": flag_input
+                        })
+                        if result and result.get('correct'):
+                            st.success(result['message'])
+                            st.balloons()
+                        else:
+                            st.error("Incorrect flag")
+                else:
+                    # Hint system
+                    current_hint_level = st.session_state.hint_level.get(challenge['id'], 0)
+                    
+                    col1, col2 = st.columns([1, 3])
+                    with col1:
+                        if st.button("💡 Get Hint", key=f"hint_{challenge['id']}"):
+                            hint_data = api_get(f"/api/challenges/hint/{challenge['id']}/{current_hint_level}")
+                            if hint_data:
+                                st.info(f"**Hint {current_hint_level + 1}:** {hint_data.get('hint')}")
+                                st.session_state.hint_level[challenge['id']] = current_hint_level + 1
+                    
+                    with col2:
+                        if st.button("🎯 Start Challenge", key=f"start_{challenge['id']}"):
+                            st.session_state.selected_challenge = challenge
+                            st.session_state.page = 'attack'
+                            st.rerun()
+
+# ============================================================================
+# LEADERBOARD
+# ============================================================================
+
+def render_leaderboard():
+    st.title("🏆 Leaderboard")
+    
+    tab1, tab2, tab3 = st.tabs(["🌍 Global", "🎯 Challenges", "📊 Server Stats"])
+    
+    with tab1:
+        st.subheader("Top Students")
+        
+        leaderboard_data = api_get("/api/leaderboard/global?limit=50")
+        if leaderboard_data:
+            leaderboard = leaderboard_data.get('leaderboard', [])
+            
+            if leaderboard:
+                df = pd.DataFrame(leaderboard)
+                df.index = df.index + 1
+                df.columns = ['Student ID', 'Total Score', 'Successful Attacks', 'Total Attacks', 'Success Rate %']
+                
+                # Highlight current user
+                def highlight_current_user(row):
+                    if row['Student ID'] == st.session_state.student_id:
+                        return ['background-color: #90EE90'] * len(row)
+                    return [''] * len(row)
+                
+                styled_df = df.style.apply(highlight_current_user, axis=1)
+                st.dataframe(styled_df, use_container_width=True, height=600)
+                
+                # Visualization
+                if len(leaderboard) > 0:
+                    fig = px.bar(
+                        df.head(10),
+                        x='Student ID',
+                        y='Total Score',
+                        title='Top 10 Students by Score',
+                        color='Success Rate %',
+                        color_continuous_scale='Viridis'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No leaderboard data yet")
+    
+    with tab2:
+        st.subheader("Challenge Leaderboards")
+        
+        challenges_data = api_get(f"/api/challenges/list/{st.session_state.student_id}")
+        if challenges_data:
+            challenges = challenges_data.get('challenges', [])
+            challenge_names = {c['id']: c['title'] for c in challenges}
+            
+            if challenge_names:
+                selected_challenge = st.selectbox(
+                    "Select Challenge",
+                    options=list(challenge_names.keys()),
+                    format_func=lambda x: challenge_names[x]
+                )
+                
+                if selected_challenge:
+                    challenge_lb = api_get(f"/api/leaderboard/challenge/{selected_challenge}?limit=20")
+                    if challenge_lb:
+                        lb_data = challenge_lb.get('leaderboard', [])
+                        
+                        if lb_data:
+                            df = pd.DataFrame(lb_data)
+                            df.index = df.index + 1
+                            df.columns = ['Student ID', 'Attempts', 'Completion Time']
+                            st.dataframe(df, use_container_width=True)
+                        else:
+                            st.info("No one has completed this challenge yet")
+    
+    with tab3:
+        st.subheader("Server Exploitation Statistics")
+        
+        server_stats = api_get("/api/stats/server")
+        if server_stats:
+            stats = server_stats.get('stats', [])
+            
+            if stats:
+                df = pd.DataFrame(stats)
+                df.columns = ['Server', 'Total Attempts', 'Successful Exploits', 'Unique Students']
+                df['Success Rate %'] = (df['Successful Exploits'] / df['Total Attempts'] * 100).round(1)
+                
+                st.dataframe(df, use_container_width=True)
+                
+                # Visualization
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    fig1 = px.pie(
+                        df,
+                        values='Total Attempts',
+                        names='Server',
+                        title='Attempts by Server'
+                    )
+                    st.plotly_chart(fig1, use_container_width=True)
+                
+                with col2:
+                    fig2 = px.bar(
+                        df,
+                        x='Server',
+                        y='Success Rate %',
+                        title='Success Rate by Server',
+                        color='Success Rate %',
+                        color_continuous_scale='RdYlGn'
+                    )
+                    st.plotly_chart(fig2, use_container_width=True)
 
 # ============================================================================
 # DEFEND PHASE
@@ -357,7 +589,295 @@ def render_defend():
             st.markdown(f"**{defense['timestamp']}** - {defense['server']} ({defense['code_length']} chars)")
 
 # ============================================================================
-# TEMPLATES
+# LEARNING RESOURCES
+# ============================================================================
+
+def render_learning_resources():
+    st.title("📚 Learning Resources")
+    
+    st.markdown("""
+    Master MCP security vulnerabilities with these resources and tutorials.
+    """)
+    
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🎓 Tutorials",
+        "🔍 Vulnerability Guide", 
+        "🛠️ Tools & Techniques",
+        "📖 References"
+    ])
+    
+    with tab1:
+        st.subheader("Interactive Tutorials")
+        
+        tutorials = {
+            "SQL Injection": {
+                "description": "Learn to exploit SQL injection vulnerabilities",
+                "topics": [
+                    "Basic OR-based injection",
+                    "UNION-based injection",
+                    "Time-based blind injection",
+                    "Error-based injection"
+                ],
+                "example": """
+# Basic SQL Injection
+username: admin' OR '1'='1
+
+# This transforms the query to:
+SELECT * FROM users WHERE username = 'admin' OR '1'='1'
+# Which always returns true
+"""
+            },
+            "Command Injection": {
+                "description": "Execute arbitrary commands through vulnerable inputs",
+                "topics": [
+                    "Shell metacharacters (; && || |)",
+                    "Command chaining",
+                    "Bypassing filters",
+                    "Out-of-band exfiltration"
+                ],
+                "example": """
+# Command Injection via Git Clone
+repo_url: https://github.com/user/repo.git; whoami
+
+# This executes:
+git clone https://github.com/user/repo.git /tmp/repo && whoami
+"""
+            },
+            "Path Traversal": {
+                "description": "Access files outside the intended directory",
+                "topics": [
+                    "Directory traversal with ../",
+                    "Absolute path injection",
+                    "Null byte injection",
+                    "Encoding bypasses"
+                ],
+                "example": """
+# Path Traversal Attack
+filepath: ../../../../etc/passwd
+
+# Accesses system password file
+"""
+            },
+            "SSRF (Server-Side Request Forgery)": {
+                "description": "Make the server request internal resources",
+                "topics": [
+                    "Internal network scanning",
+                    "Cloud metadata access",
+                    "Protocol smuggling",
+                    "DNS rebinding"
+                ],
+                "example": """
+# SSRF to EC2 Metadata
+url: http://169.254.169.254/latest/meta-data/iam/security-credentials/
+
+# Accesses AWS credentials
+"""
+            },
+            "JWT Attacks": {
+                "description": "Forge and manipulate JSON Web Tokens",
+                "topics": [
+                    "None algorithm bypass",
+                    "Weak secret brute-forcing",
+                    "Key confusion attacks",
+                    "Algorithm substitution"
+                ],
+                "example": """
+# JWT None Algorithm Attack
+Header: {"alg": "none", "typ": "JWT"}
+Payload: {"user": "admin", "role": "administrator"}
+Signature: (empty)
+"""
+            }
+        }
+        
+        for title, content in tutorials.items():
+            with st.expander(f"📖 {title}"):
+                st.markdown(f"**{content['description']}**")
+                st.markdown("**Topics Covered:**")
+                for topic in content['topics']:
+                    st.markdown(f"- {topic}")
+                st.markdown("**Example:**")
+                st.code(content['example'])
+    
+    with tab2:
+        st.subheader("Vulnerability Reference Guide")
+        
+        vulnerabilities = {
+            "Command Injection": {
+                "severity": "🔴 Critical",
+                "description": "Occurs when user input is passed to system shell without sanitization",
+                "vulnerable_patterns": [
+                    "subprocess.run() with shell=True",
+                    "os.system() with user input",
+                    "eval() or exec() with user data"
+                ],
+                "mitigation": [
+                    "Use subprocess with list arguments (shell=False)",
+                    "Validate and whitelist all inputs",
+                    "Never concatenate user input into shell commands"
+                ]
+            },
+            "SQL Injection": {
+                "severity": "🔴 Critical",
+                "description": "Attacker can manipulate SQL queries through unsanitized input",
+                "vulnerable_patterns": [
+                    "String concatenation in SQL queries",
+                    "f-strings or format() with user input in queries",
+                    "Dynamic query building without parameterization"
+                ],
+                "mitigation": [
+                    "Always use parameterized queries (? placeholders)",
+                    "Use ORM frameworks",
+                    "Validate and sanitize all user inputs"
+                ]
+            },
+            "Path Traversal": {
+                "severity": "🟠 High",
+                "description": "Access files outside intended directory using ../ sequences",
+                "vulnerable_patterns": [
+                    "Direct use of user input in file paths",
+                    "No validation of path components",
+                    "Missing canonicalization"
+                ],
+                "mitigation": [
+                    "Whitelist allowed directories",
+                    "Use os.path.realpath() and verify result",
+                    "Reject paths containing .. or absolute paths"
+                ]
+            },
+            "SSRF": {
+                "severity": "🟠 High",
+                "description": "Server makes requests to internal resources on attacker's behalf",
+                "vulnerable_patterns": [
+                    "Unrestricted URL fetching",
+                    "No validation of destination addresses",
+                    "Following redirects blindly"
+                ],
+                "mitigation": [
+                    "Whitelist allowed protocols and domains",
+                    "Block private IP ranges (10.0.0.0/8, 169.254.0.0/16)",
+                    "Disable redirects or validate redirect targets"
+                ]
+            },
+            "Deserialization": {
+                "severity": "🔴 Critical",
+                "description": "Untrusted data deserialized can lead to RCE",
+                "vulnerable_patterns": [
+                    "pickle.loads() on user data",
+                    "yaml.load() with Loader=yaml.Loader",
+                    "eval() on serialized data"
+                ],
+                "mitigation": [
+                    "Never deserialize untrusted data",
+                    "Use safe serialization formats (JSON)",
+                    "Use yaml.safe_load() instead of yaml.load()"
+                ]
+            },
+            "Template Injection": {
+                "severity": "🔴 Critical",
+                "description": "User input processed as template code leads to RCE",
+                "vulnerable_patterns": [
+                    "User-controlled template strings",
+                    "Jinja2 templates with user input",
+                    "String formatting with user data"
+                ],
+                "mitigation": [
+                    "Separate data from template code",
+                    "Use sandboxed template environments",
+                    "Never trust user-provided templates"
+                ]
+            }
+        }
+        
+        for vuln_name, details in vulnerabilities.items():
+            with st.expander(f"{details['severity']} {vuln_name}"):
+                st.markdown(f"**Description:** {details['description']}")
+                
+                st.markdown("**Vulnerable Patterns:**")
+                for pattern in details['vulnerable_patterns']:
+                    st.markdown(f"- `{pattern}`")
+                
+                st.markdown("**Mitigation:**")
+                for mitigation in details['mitigation']:
+                    st.markdown(f"✅ {mitigation}")
+    
+    with tab3:
+        st.subheader("Tools & Techniques")
+        
+        st.markdown("### Useful Payloads")
+        
+        payloads = {
+            "SQL Injection": [
+                "' OR '1'='1",
+                "' OR '1'='1' --",
+                "admin' --",
+                "' UNION SELECT NULL, NULL, NULL --",
+                "' AND 1=0 UNION SELECT username, password FROM users --"
+            ],
+            "Command Injection": [
+                "; whoami",
+                "&& cat /etc/passwd",
+                "| ls -la",
+                "`whoami`",
+                "$(id)"
+            ],
+            "Path Traversal": [
+                "../../../../etc/passwd",
+                "..\\..\\..\\..\\windows\\system32\\drivers\\etc\\hosts",
+                "/etc/passwd",
+                "....//....//....//etc/passwd"
+            ],
+            "SSRF": [
+                "http://169.254.169.254/latest/meta-data/",
+                "http://localhost:8000",
+                "http://127.0.0.1:6379",
+                "file:///etc/passwd"
+            ]
+        }
+        
+        for category, payload_list in payloads.items():
+            with st.expander(f"🎯 {category} Payloads"):
+                for payload in payload_list:
+                    st.code(payload, language="text")
+        
+        st.markdown("### Testing Methodology")
+        st.info("""
+        1. **Reconnaissance**: Identify input parameters and their types
+        2. **Fuzzing**: Test with special characters and injection attempts
+        3. **Validation**: Check if input validation exists
+        4. **Exploitation**: Craft payload based on vulnerability
+        5. **Verification**: Confirm successful exploitation
+        6. **Documentation**: Record the attack vector and impact
+        """)
+    
+    with tab4:
+        st.subheader("External References")
+        
+        st.markdown("""
+        ### OWASP Resources
+        - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+        - [SQL Injection Guide](https://owasp.org/www-community/attacks/SQL_Injection)
+        - [Command Injection](https://owasp.org/www-community/attacks/Command_Injection)
+        
+        ### PortSwigger Web Security Academy
+        - [SQL Injection Labs](https://portswigger.net/web-security/sql-injection)
+        - [SSRF Labs](https://portswigger.net/web-security/ssrf)
+        - [Command Injection Labs](https://portswigger.net/web-security/os-command-injection)
+        
+        ### Books & Courses
+        - The Web Application Hacker's Handbook
+        - Real-World Bug Hunting
+        - HackerOne CTF Writeups
+        
+        ### Practice Platforms
+        - HackTheBox
+        - TryHackMe
+        - PentesterLab
+        - VulnHub
+        """)
+
+# ============================================================================
+# DEFENSE TEMPLATES
 # ============================================================================
 
 def get_defense_template(server_id):
