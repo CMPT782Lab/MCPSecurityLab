@@ -41,6 +41,7 @@ pip install fastapi uvicorn requests fastmcp streamlit pandas plotly sqlite3
 #### Terminal 1 - Start Backend API:
 ```bash
 python backend.py
+python backend.py
 ```
 *Starts vulnerable MCP servers on port 8000*
 
